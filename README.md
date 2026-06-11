@@ -1,12 +1,12 @@
 # Design and Development of “AquaCare” : An AI-Based Autonomous River Cleaning System for Floating Waste Detection and Collection.
 
 ## Problem
-Water bodies (rivers, lakes) are polluted with : 
+*Water bodies (rivers, lakes) are polluted with : 
 - Plastic bottles 
 - Wrappers 
 - Floating debris 
-Manual cleaning is inefficient and unsafe.
-So we need an automated intelligent system for autonomous cleaning.
+*Manual cleaning is inefficient and unsafe.
+*So we need an automated intelligent system for autonomous cleaning.
 
 ## Solution
 AquaCare is an autonomous robot that:
