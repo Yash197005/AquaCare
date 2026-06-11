@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>AquaCare Pro Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #0d1b2a, #1b263b);
+    color: white;
+    margin: 0;
+}
+
+/* Header */
+header {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(10px);
+    padding: 18px;
+    text-align: center;
+    font-size: 24px;
+    color: #00d4ff;
+    letter-spacing: 1px;
+}
+
+/* Grid */
+.container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    padding: 20px;
+}
+
+/* Cards */
+.card {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    padding: 18px;
+    border-radius: 15px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    transition: 0.3s;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+/* Buttons */
+button {
+    padding: 10px 18px;
+    background: linear-gradient(45deg, #00b4d8, #0077b6);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    margin: 5px;
+    font-weight: bold;
+}
+
+button:hover {
+    opacity: 0.8;
+}
+
+/* Image */
+img {
+    width: 100%;
+    border-radius: 12px;
+}
+
+/* Stats */
+.stat {
+    font-size: 18px;
+    margin: 8px 0;
+}
+
+/* Highlight numbers */
+.highlight {
+    font-size: 26px;
+    font-weight: bold;
+    color: #00d4ff;
+}
+
+/* Scroll areas */
+.scroll-box {
+    height: 140px;
+    overflow-y: auto;
+    font-size: 14px;
+}
+
+/* Smooth scrollbar */
+.scroll-box::-webkit-scrollbar {
+    width: 6px;
+}
+.scroll-box::-webkit-scrollbar-thumb {
+    background: #00b4d8;
+    border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<header>🌊 AquaCare Smart Monitoring Dashboard</header>
+
+<div class="container">
+
+<div class="card">
+    <h3>📷 Live Feed</h3>
+    <img id="video">
+    <br><br>
+    <button onclick="start()">▶ Start</button>
+    <button onclick="stop()">⏹ Stop</button>
+</div>
+
+<div class="card">
+    <h3>📊 System Stats</h3>
+    <div class="stat">Objects: <span id="count" class="highlight">0</span></div>
+    <div class="stat">FPS: <span id="fps">0</span></div>
+    <div class="stat">Status: <span id="status">Idle</span></div>
+</div>
+
+<div class="card">
+    <h3>📈 Waste Trend</h3>
+    <canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+    <h3>📜 Detection Log</h3>
+    <div id="log" class="scroll-box"></div>
+</div>
+
+</div>
+
+<div class="container">
+
+<div class="card">
+    <h3>🌡 Pollution Level</h3>
+    <p id="pollution" class="highlight">Low</p>
+</div>
+
+<div class="card">
+    <h3>📦 Total Waste Collected</h3>
+    <p id="total" class="highlight">0</p>
+</div>
+
+<div class="card">
+    <h3>⏱ System Uptime</h3>
+    <p id="uptime">0 sec</p>
+</div>
+
+<div class="card">
+    <h3>🚨 Alerts</h3>
+    <div id="alerts" class="scroll-box"></div>
+</div>
+
+</div>
+
+<script>
+let intervalId;
+let lastTime = Date.now();
+let startTime = Date.now();
+
+// Chart
+let chartData = [];
+let labels = [];
+
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Waste Count',
+            data: chartData,
+            borderWidth: 2
+        }]
+    }
+});
+
+function start() {
+    document.getElementById("status").innerText = "Running";
+
+    intervalId = setInterval(async () => {
+
+        let res = await fetch("http://127.0.0.1:5000/esp32");
+        let data = await res.json();
+
+        document.getElementById("video").src =
+            "data:image/jpeg;base64," + data.image;
+
+        let detected = data.detected;
+        let collected = data.collected;
+
+        document.getElementById("count").innerText = detected;
+        document.getElementById("total").innerText = collected;
+
+        // uptime
+        let uptime = Math.floor((Date.now() - startTime)/1000);
+        document.getElementById("uptime").innerText = uptime + " sec";
+
+        // chart
+        let time = new Date().toLocaleTimeString();
+        labels.push(time);
+        chartData.push(detected);
+
+        if (labels.length > 10) {
+            labels.shift();
+            chartData.shift();
+        }
+
+        chart.update();
+
+        // FPS
+        let fps = (1000/(Date.now()-lastTime)).toFixed(1);
+        lastTime = Date.now();
+        document.getElementById("fps").innerText = fps;
+
+        // pollution
+        let pollutionText = "Low";
+        if (detected >= 3) pollutionText = "Medium";
+        if (detected >= 5) pollutionText = "High";
+
+        document.getElementById("pollution").innerText = pollutionText;
+
+        // logs
+        let log = document.getElementById("log");
+        log.innerHTML += `Detected: ${detected}<br>`;
+        log.scrollTop = log.scrollHeight;
+
+        // alerts
+        if (pollutionText === "High") {
+            let alerts = document.getElementById("alerts");
+            alerts.innerHTML += "⚠️ High pollution detected<br>";
+            alerts.scrollTop = alerts.scrollHeight;
+        }
+
+    }, 2000);
+}
+
+function stop() {
+    clearInterval(intervalId);
+    document.getElementById("status").innerText = "Stopped";
+}
+
+</script>
+
+</body>
+</html>
