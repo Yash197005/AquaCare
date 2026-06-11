@@ -1,0 +1,117 @@
+from flask import Flask, jsonify
+from flask_cors import CORS
+from ultralytics import YOLO
+import cv2
+import requests
+import base64
+import numpy as np
+
+app = Flask(__name__)
+CORS(app)
+
+model = YOLO("best_model.pt")
+ESP32 = "http://172.20.26.55"
+
+search_count = 0
+last_detected = False
+collected_count = 0
+
+no_detect_streak = 0
+DISAPPEAR_FRAMES = 3   # ← change to 2 or 3
+
+def esp32_get(path):
+    try:
+        requests.get(f"{ESP32}{path}", timeout=2)
+    except:
+        pass
+
+@app.route('/esp32')
+def esp32_route():
+    global search_count, last_detected, collected_count
+    global no_detect_streak
+
+    try:
+        resp = requests.get(f"{ESP32}/capture", timeout=3)
+    except:
+        return jsonify({"error": "ESP32 not reachable"})
+
+    img_array = np.asarray(bytearray(resp.content), dtype=np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+    if img is None:
+        return jsonify({"error": "Image decode failed"})
+
+    img_h, img_w = img.shape[:2]
+
+    results = model(img)
+
+    count = 0
+    boxes = []
+    detections = []
+
+    for r in results:
+        for box in r.boxes:
+            conf = float(box.conf)
+            if conf < 0.4:
+                continue
+
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            label = model.names[int(box.cls)]
+
+            count += 1
+            boxes.append(box)
+            detections.append(label)
+
+            cv2.rectangle(img, (x1,y1), (x2,y2), (0,255,0), 2)
+            cv2.putText(img, f"{label} {conf:.2f}",
+                        (x1,y1-10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0,255,0),
+                        2)
+
+    if count > 0:
+        last_detected = True
+        no_detect_streak = 0
+
+        box = boxes[0]
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        center_x = (x1 + x2) // 2
+
+        if center_x < img_w * 0.4:
+            esp32_get("/left")
+        elif center_x > img_w * 0.6:
+            esp32_get("/right")
+        else:
+            esp32_get("/forward")
+
+        search_count = 0
+
+    else:
+        no_detect_streak += 1
+
+        if last_detected and no_detect_streak >= DISAPPEAR_FRAMES:
+            collected_count += 1
+            print(f"Collected waste #{collected_count}")
+            last_detected = False
+            no_detect_streak = 0
+
+        if search_count < 3:
+            esp32_get("/right")
+            search_count += 1
+        else:
+            esp32_get("/forward")
+            search_count = 0
+
+    _, buffer = cv2.imencode('.jpg', img)
+    img_base64 = base64.b64encode(buffer).decode('utf-8')
+
+    return jsonify({
+        "image": img_base64,
+        "detected": count,
+        "collected": collected_count,
+        "detections": detections
+    })
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
